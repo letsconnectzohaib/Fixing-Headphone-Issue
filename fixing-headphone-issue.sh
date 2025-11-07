@@ -7,7 +7,7 @@
 
 # Must be run as root
 if [ "$EUID" -ne 0 ]; then
-  echo "❌ Please run this script as root (use: sudo bash install_pipewire_default.sh)"
+  echo "❌ Please run this script as root (use: sudo or contact "Mr. Zohaib")"
   exit 1
 fi
 
