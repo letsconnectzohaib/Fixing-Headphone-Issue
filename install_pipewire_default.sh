@@ -7,26 +7,35 @@
 
 # Must be run as root
 if [ "$EUID" -ne 0 ]; then
-  echo "❌ Please run this script as root (use: sudo or contact "Mr. Zohaib")"
+  echo "❌ Please run this script as root (use: sudo ./install_pipewire_default.sh)"
   exit 1
 fi
+
+USER_NAME="${SUDO_USER:-$USER}"
 
 echo "🔄 Updating package lists..."
 apt update -y
 
 echo "📦 Installing PipeWire and dependencies..."
 apt install -y pipewire pipewire-audio-client-libraries \
-  libspa-0.2-bluetooth wireplumber pipewire-pulse alsa-utils
+  libspa-0.2-bluetooth wireplumber pipewire-pulse alsa-utils \
+  pavucontrol pulseaudio-utils
 
 echo "🚫 Disabling and removing PulseAudio..."
-systemctl --user --now disable pulseaudio.service pulseaudio.socket 2>/dev/null || true
-systemctl --user --now stop pulseaudio.service pulseaudio.socket 2>/dev/null || true
+sudo -u "$USER_NAME" bash -c '
+  systemctl --user --now disable pulseaudio.service pulseaudio.socket 2>/dev/null || true
+  systemctl --user --now stop pulseaudio.service pulseaudio.socket 2>/dev/null || true
+'
 apt purge -y pulseaudio
 apt autoremove -y
 
-echo "⚙️ Enabling PipeWire services..."
-systemctl --user --now enable pipewire.service pipewire-pulse.service wireplumber.service
-systemctl --user --now start pipewire.service pipewire-pulse.service wireplumber.service
+echo "⚙️ Enabling PipeWire services safely..."
+loginctl enable-linger "$USER_NAME" 2>/dev/null || true
+
+sudo -u "$USER_NAME" bash -c '
+  systemctl --user --now enable pipewire.service pipewire-pulse.service wireplumber.service 2>/dev/null || true
+  systemctl --user --now start pipewire.service pipewire-pulse.service wireplumber.service 2>/dev/null || true
+'
 
 echo "🔐 Locking PipeWire as default audio server..."
 mkdir -p /etc/xdg/autostart
@@ -50,11 +59,19 @@ X-GNOME-Autostart-enabled=true
 Name=PipeWire Pulse Replacement
 EOF
 
+echo "🎧 Configuring ALSA & USB headset rules..."
+cat <<EOF > /etc/modprobe.d/alsa-base.conf
+# Use PipeWire for all USB audio
+options snd_usb_audio index=0
+EOF
+
+# Reload ALSA
 echo "🔊 Reloading ALSA and audio subsystems..."
-alsa force-reload
+alsa force-reload || true
 pactl unload-module module-udev-detect 2>/dev/null || true
 pactl load-module module-udev-detect 2>/dev/null || true
 
-echo "✅ Done!"
+echo "✅ PipeWire installation complete!"
 echo "➡️ Reboot your system to finalize setup."
 echo "You can verify with: pactl info | grep 'Server Name'"
+echo "It should show: 'Server Name: PipeWire (PulseAudio Replacement)'"
